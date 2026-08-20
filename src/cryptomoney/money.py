@@ -60,6 +60,27 @@ class Money:
     def zero(cls, asset: Asset) -> Money:
         return cls(Decimal(0), asset)
 
+    @classmethod
+    def from_base_units(cls, units: int, asset: Asset) -> Money:
+        """Build an amount from an integer count of the asset's smallest unit."""
+        if isinstance(units, float):
+            raise _refuse_float(units)
+        if isinstance(units, bool) or not isinstance(units, int):
+            raise TypeError(f"units must be an int, got {type(units).__name__}")
+        if not isinstance(asset, Asset):
+            raise TypeError(f"asset must be an Asset, got {type(asset).__name__}")
+        digits = tuple(int(digit) for digit in str(abs(units)))
+        return cls(Decimal((1 if units < 0 else 0, digits, -asset.decimals)), asset)
+
+    def to_base_units(self) -> int:
+        """The amount as an integer count of the asset's smallest unit."""
+        sign, digits, exponent = self.amount.as_tuple()
+        value = int("".join(str(digit) for digit in digits))
+        # Construction rejects amounts finer than the asset, so the shift is never
+        # negative and nothing is ever rounded away here.
+        units = value * 10 ** (int(exponent) + self.asset.decimals)
+        return -units if sign else units
+
     @property
     def is_zero(self) -> bool:
         return self.amount == 0

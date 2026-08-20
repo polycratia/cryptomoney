@@ -15,6 +15,7 @@ from .registry import (
     AssetRegistry,
     UnknownAsset,
 )
+from .units import from_satoshi, from_wei, to_satoshi, to_wei
 
 __all__ = [
     "ASSETS",
@@ -32,6 +33,10 @@ __all__ = [
     "USDT",
     "UnknownAsset",
     "__version__",
+    "from_satoshi",
+    "from_wei",
+    "to_satoshi",
+    "to_wei",
 ]
 
 __version__ = "0.1.0"

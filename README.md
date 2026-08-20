@@ -5,9 +5,8 @@ and wei units, parsing and formatting.
 
 ## Status
 
-The core value objects (`Asset`, `Money`) and the asset registry are
-implemented. Unit helpers (satoshi, wei), parsing and formatting are not there
-yet.
+The core value objects (`Asset`, `Money`), the asset registry and base unit
+conversion are implemented. Parsing and formatting are not there yet.
 
 ## Usage
 
@@ -61,6 +60,26 @@ own = AssetRegistry([Asset("POINTS", 0)])         # or start from nothing
 ```
 
 Looking up a symbol that is not registered raises `UnknownAsset`.
+
+## Base units
+
+Chain APIs speak integers: satoshi, wei, the smallest unit an asset is
+divisible into. Conversion goes both ways and is exact:
+
+```python
+from cryptomoney import BTC, USDT, Money, from_wei, to_satoshi
+
+to_satoshi(Money("0.5", BTC))            # 50000000
+from_wei(1)                              # 0.000000000000000001 ETH
+
+Money("12.5", USDT).to_base_units()      # 12500000
+Money.from_base_units(12500000, USDT)    # 12.500000 USDT
+```
+
+An amount finer than its asset cannot be constructed in the first place, so a
+conversion never has a remainder to round away. `to_base_units()` and
+`from_base_units()` work for any asset; `to_satoshi`, `from_satoshi`, `to_wei`
+and `from_wei` are the named shorthands for BTC and ETH.
 
 ## Installation
 
