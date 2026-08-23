@@ -5,8 +5,8 @@ and wei units, parsing and formatting.
 
 ## Status
 
-The core value objects (`Asset`, `Money`), the asset registry and base unit
-conversion are implemented. Parsing and formatting are not there yet.
+The core value objects (`Asset`, `Money`), the asset registry, arithmetic and
+base unit conversion are implemented. Parsing and formatting are not there yet.
 
 ## Usage
 
@@ -29,6 +29,35 @@ construction, so rounding errors cannot enter a balance:
 Money(0.1, BTC)                  # TypeError: float is refused
 Money("0.000000001", BTC)        # ValueError: BTC is divisible into 8 decimal places
 Money("1", BTC) + Money("1", ETH)  # CurrencyMismatch
+```
+
+## Arithmetic
+
+Sums and comparisons stay within one asset: mixing two assets raises
+`CurrencyMismatch` instead of producing a number that means nothing. Addition,
+subtraction and multiplication by a whole number are exact, so they are plain
+operators. Anything that may not fit the asset's precision asks for its
+rounding mode and has no default:
+
+```python
+from decimal import ROUND_DOWN, ROUND_HALF_UP
+
+from cryptomoney import BTC, Money
+
+Money("0.5", BTC) / 3                                      # TypeError: / is refused
+Money("0.5", BTC).divide(3, rounding=ROUND_DOWN)           # 0.16666666 BTC
+Money("1", BTC).multiply("0.015", rounding=ROUND_HALF_UP)  # 0.01500000 BTC
+```
+
+The result is quantized to the asset's precision with the mode you passed, so
+nothing is ever trimmed behind your back. When the whole amount has to survive
+the division, `split` works in base units and hands the remainder to the first
+shares:
+
+```python
+shares = Money("0.00000010", BTC).split(3)
+[str(share) for share in shares]   # ['0.00000004 BTC', '0.00000003 BTC', '0.00000003 BTC']
+sum(shares[1:], shares[0])         # 0.00000010 BTC
 ```
 
 ## Assets

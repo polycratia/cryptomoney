@@ -3,12 +3,37 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import (
+    ROUND_05UP,
+    ROUND_CEILING,
+    ROUND_DOWN,
+    ROUND_FLOOR,
+    ROUND_HALF_DOWN,
+    ROUND_HALF_EVEN,
+    ROUND_HALF_UP,
+    ROUND_UP,
+    Decimal,
+    InvalidOperation,
+    localcontext,
+)
 from typing import Union
 
 from .asset import Asset
 
 AmountLike = Union[Decimal, int, str]
+
+_ROUNDING_MODES = frozenset(
+    {
+        ROUND_05UP,
+        ROUND_CEILING,
+        ROUND_DOWN,
+        ROUND_FLOOR,
+        ROUND_HALF_DOWN,
+        ROUND_HALF_EVEN,
+        ROUND_HALF_UP,
+        ROUND_UP,
+    }
+)
 
 
 class CurrencyMismatch(TypeError):
@@ -42,6 +67,44 @@ def _to_decimal(value: AmountLike, asset: Asset) -> Decimal:
             f"but {value!r} needs {used}"
         )
     return amount
+
+
+def _operand(value: AmountLike, name: str) -> Decimal:
+    if isinstance(value, float):
+        raise _refuse_float(value)
+    if isinstance(value, bool) or not isinstance(value, (Decimal, int, str)):
+        raise TypeError(
+            f"{name} must be a Decimal, int or str, got {type(value).__name__}"
+        )
+    try:
+        operand = Decimal(value)
+    except InvalidOperation as exc:
+        raise ValueError(f"{name} is not a valid decimal: {value!r}") from exc
+    if not operand.is_finite():
+        raise ValueError(f"{name} must be finite, got {value!r}")
+    return operand
+
+
+def _check_rounding(rounding: str) -> None:
+    if not isinstance(rounding, str):
+        raise TypeError(f"rounding must be a str, got {type(rounding).__name__}")
+    if rounding not in _ROUNDING_MODES:
+        raise ValueError(
+            f"unknown rounding mode {rounding!r}, expected one of "
+            f"{', '.join(sorted(_ROUNDING_MODES))}"
+        )
+
+
+def _working_precision(asset: Asset, *values: Decimal) -> int:
+    digits = max(len(value.as_tuple().digits) for value in values)
+    return digits + asset.decimals + 10
+
+
+def _quantize(amount: Decimal, asset: Asset, rounding: str) -> Decimal:
+    quantum = Decimal((0, (1,), -asset.decimals))
+    with localcontext() as ctx:
+        ctx.prec = _working_precision(asset, amount)
+        return amount.quantize(quantum, rounding=rounding)
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +162,44 @@ class Money:
                 f"{self.asset.symbol} and {other.asset.symbol} are different assets"
             )
 
+    def multiply(self, factor: AmountLike, *, rounding: str) -> Money:
+        """Multiply by a factor and round the result to the asset's precision."""
+        _check_rounding(rounding)
+        operand = _operand(factor, "factor")
+        with localcontext() as ctx:
+            ctx.prec = _working_precision(self.asset, self.amount, operand)
+            ctx.rounding = rounding
+            product = self.amount * operand
+        return Money(_quantize(product, self.asset, rounding), self.asset)
+
+    def divide(self, divisor: AmountLike, *, rounding: str) -> Money:
+        """Divide by a divisor and round the result to the asset's precision."""
+        _check_rounding(rounding)
+        operand = _operand(divisor, "divisor")
+        if operand == 0:
+            raise ZeroDivisionError(f"cannot divide {self} by zero")
+        with localcontext() as ctx:
+            ctx.prec = _working_precision(self.asset, self.amount, operand)
+            ctx.rounding = rounding
+            quotient = self.amount / operand
+        return Money(_quantize(quotient, self.asset, rounding), self.asset)
+
+    def split(self, parts: int) -> list[Money]:
+        """Split into parts that add back up to this amount, exactly."""
+        if isinstance(parts, bool) or not isinstance(parts, int):
+            raise TypeError(f"parts must be an int, got {type(parts).__name__}")
+        if parts < 1:
+            raise ValueError(f"parts must be at least 1, got {parts}")
+        total = self.to_base_units()
+        sign = -1 if total < 0 else 1
+        share, remainder = divmod(abs(total), parts)
+        return [
+            Money.from_base_units(
+                sign * (share + (1 if index < remainder else 0)), self.asset
+            )
+            for index in range(parts)
+        ]
+
     def __add__(self, other: object) -> Money:
         if not isinstance(other, Money):
             return NotImplemented
@@ -114,12 +215,23 @@ class Money:
     def __mul__(self, factor: int) -> Money:
         if isinstance(factor, float):
             raise _refuse_float(factor)
+        if isinstance(factor, (Decimal, str)):
+            raise TypeError(
+                f"multiplying by {factor!r} can land below the precision of "
+                f"{self.asset.symbol}. Use .multiply(factor, rounding=...) instead."
+            )
         if isinstance(factor, bool) or not isinstance(factor, int):
             return NotImplemented
         return Money(self.amount * factor, self.asset)
 
     def __rmul__(self, factor: int) -> Money:
         return self.__mul__(factor)
+
+    def __truediv__(self, divisor: object) -> Money:
+        raise TypeError(
+            "/ is refused because the rounding of the result would be implicit. "
+            "Use .divide(divisor, rounding=...) or .split(parts)."
+        )
 
     def __neg__(self) -> Money:
         return Money(-self.amount, self.asset)
