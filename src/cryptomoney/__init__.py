@@ -2,6 +2,7 @@
 
 from .asset import Asset
 from .money import CurrencyMismatch, Money
+from .parsing import ParseError, parse_amount, parse_money
 from .registry import (
     ASSETS,
     BNB,
@@ -28,6 +29,7 @@ __all__ = [
     "ETH",
     "LTC",
     "Money",
+    "ParseError",
     "SOL",
     "USDC",
     "USDT",
@@ -35,6 +37,8 @@ __all__ = [
     "__version__",
     "from_satoshi",
     "from_wei",
+    "parse_amount",
+    "parse_money",
     "to_satoshi",
     "to_wei",
 ]

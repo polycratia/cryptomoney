@@ -35,6 +35,8 @@ _ROUNDING_MODES = frozenset(
     }
 )
 
+_GROUP_SEPARATOR = ","
+
 
 class CurrencyMismatch(TypeError):
     """Raised when amounts of different assets are combined or compared."""
@@ -45,6 +47,10 @@ def _refuse_float(value: float) -> TypeError:
         f"float is refused: {value!r} is a binary float and cannot represent "
         "decimal fractions exactly. Pass a str or a Decimal instead."
     )
+
+
+def _decimals_used(amount: Decimal) -> int:
+    return max(0, -int(amount.as_tuple().exponent))
 
 
 def _to_decimal(value: AmountLike, asset: Asset) -> Decimal:
@@ -95,16 +101,26 @@ def _check_rounding(rounding: str) -> None:
         )
 
 
-def _working_precision(asset: Asset, *values: Decimal) -> int:
-    digits = max(len(value.as_tuple().digits) for value in values)
-    return digits + asset.decimals + 10
+def _working_precision(places: int, *values: Decimal) -> int:
+    digits = max(
+        len(value.as_tuple().digits) + max(int(value.as_tuple().exponent), 0)
+        for value in values
+    )
+    return digits + places + 10
 
 
-def _quantize(amount: Decimal, asset: Asset, rounding: str) -> Decimal:
-    quantum = Decimal((0, (1,), -asset.decimals))
+def _quantize(amount: Decimal, places: int, rounding: str) -> Decimal:
+    quantum = Decimal((0, (1,), -places))
     with localcontext() as ctx:
-        ctx.prec = _working_precision(asset, amount)
+        ctx.prec = _working_precision(places, amount)
         return amount.quantize(quantum, rounding=rounding)
+
+
+def _group_integer(digits: str) -> str:
+    head = len(digits) % 3 or 3
+    return _GROUP_SEPARATOR.join(
+        [digits[:head], *(digits[at : at + 3] for at in range(head, len(digits), 3))]
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,10 +183,10 @@ class Money:
         _check_rounding(rounding)
         operand = _operand(factor, "factor")
         with localcontext() as ctx:
-            ctx.prec = _working_precision(self.asset, self.amount, operand)
+            ctx.prec = _working_precision(self.asset.decimals, self.amount, operand)
             ctx.rounding = rounding
             product = self.amount * operand
-        return Money(_quantize(product, self.asset, rounding), self.asset)
+        return Money(_quantize(product, self.asset.decimals, rounding), self.asset)
 
     def divide(self, divisor: AmountLike, *, rounding: str) -> Money:
         """Divide by a divisor and round the result to the asset's precision."""
@@ -179,10 +195,10 @@ class Money:
         if operand == 0:
             raise ZeroDivisionError(f"cannot divide {self} by zero")
         with localcontext() as ctx:
-            ctx.prec = _working_precision(self.asset, self.amount, operand)
+            ctx.prec = _working_precision(self.asset.decimals, self.amount, operand)
             ctx.rounding = rounding
             quotient = self.amount / operand
-        return Money(_quantize(quotient, self.asset, rounding), self.asset)
+        return Money(_quantize(quotient, self.asset.decimals, rounding), self.asset)
 
     def split(self, parts: int) -> list[Money]:
         """Split into parts that add back up to this amount, exactly."""
@@ -199,6 +215,51 @@ class Money:
             )
             for index in range(parts)
         ]
+
+    def format(
+        self,
+        *,
+        decimals: int | None = None,
+        rounding: str | None = None,
+        trim: bool = False,
+        group: bool = False,
+        symbol: bool = True,
+        plus: bool = False,
+    ) -> str:
+        """Render the amount as fixed point text, never as an exponent."""
+        if rounding is not None:
+            _check_rounding(rounding)
+        amount = self.amount
+        if decimals is not None:
+            if isinstance(decimals, bool) or not isinstance(decimals, int):
+                raise TypeError(
+                    f"decimals must be an int, got {type(decimals).__name__}"
+                )
+            if not 0 <= decimals <= self.asset.decimals:
+                raise ValueError(
+                    f"decimals must be between 0 and {self.asset.decimals} for "
+                    f"{self.asset.symbol}, got {decimals}"
+                )
+            if decimals < _decimals_used(amount) and rounding is None:
+                raise ValueError(
+                    f"{amount:f} does not fit into {decimals} decimal places, "
+                    "pass rounding=... to say how it should be shortened"
+                )
+            # When the amount already fits, the mode only pads it with zeros.
+            amount = _quantize(amount, decimals, rounding or ROUND_HALF_UP)
+        integer, _, fraction = f"{amount:f}".lstrip("-").partition(".")
+        if trim:
+            fraction = fraction.rstrip("0")
+        if group:
+            integer = _group_integer(integer)
+        if amount < 0:
+            sign = "-"
+        elif plus and amount > 0:
+            sign = "+"
+        else:
+            sign = ""
+        text = sign + integer + (f".{fraction}" if fraction else "")
+        return f"{text} {self.asset.symbol}" if symbol else text
 
     def __add__(self, other: object) -> Money:
         if not isinstance(other, Money):
@@ -267,4 +328,4 @@ class Money:
         return self.amount >= other.amount
 
     def __str__(self) -> str:
-        return f"{self.amount:f} {self.asset.symbol}"
+        return self.format()
