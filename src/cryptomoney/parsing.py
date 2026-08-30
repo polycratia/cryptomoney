@@ -62,6 +62,8 @@ def parse_amount(text: str, asset: Asset, *, rounding: str | None = None) -> Mon
     """Read one amount of ``asset`` from untrusted text."""
     if not isinstance(asset, Asset):
         raise TypeError(f"asset must be an Asset, got {type(asset).__name__}")
+    if rounding is not None:
+        _check_rounding(rounding)
     value = _parse_decimal(text)
     used = _decimals_used(value)
     if used > asset.decimals:
@@ -70,7 +72,6 @@ def parse_amount(text: str, asset: Asset, *, rounding: str | None = None) -> Mon
                 f"{text.strip()!r} needs {used} decimal places and {asset.symbol} "
                 f"has {asset.decimals}, pass rounding=... to accept the loss"
             )
-        _check_rounding(rounding)
         value = _quantize(value, asset.decimals, rounding)
     return Money(value, asset)
 
@@ -109,6 +110,8 @@ def parse_money(
         raise TypeError(f"text must be a str, got {type(text).__name__}")
     if not isinstance(assets, AssetRegistry):
         raise TypeError(f"assets must be an AssetRegistry, got {type(assets).__name__}")
+    if rounding is not None:
+        _check_rounding(rounding)
     if len(text) > _MAX_LENGTH:
         raise ParseError(f"text is longer than {_MAX_LENGTH} characters")
     number, symbol = _split_symbol(text)

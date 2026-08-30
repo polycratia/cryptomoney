@@ -5,8 +5,8 @@ and wei units, parsing and formatting.
 
 ## Status
 
-The core value objects (`Asset`, `Money`), the asset registry, arithmetic and
-base unit conversion are implemented. Parsing and formatting are not there yet.
+The core value objects (`Asset`, `Money`), the asset registry, arithmetic, base
+unit conversion, parsing and formatting are implemented.
 
 ## Usage
 
@@ -109,6 +109,69 @@ An amount finer than its asset cannot be constructed in the first place, so a
 conversion never has a remainder to round away. `to_base_units()` and
 `from_base_units()` work for any asset; `to_satoshi`, `from_satoshi`, `to_wei`
 and `from_wei` are the named shorthands for BTC and ETH.
+
+## Parsing
+
+`parse_amount` reads one amount of an asset you already know, `parse_money`
+also reads the symbol. Both take untrusted text: surrounding whitespace, a
+leading sign, thousands separators and exponent notation are accepted, and the
+symbol may come before, after or attached to the number:
+
+```python
+from cryptomoney import BTC, USDT, parse_amount, parse_money
+
+parse_amount("0.5", BTC)          # 0.5 BTC
+parse_amount(" 1 234.50 ", USDT)  # 1234.50 USDT
+parse_amount("1.25e3", USDT)      # 1250 USDT
+parse_money("0.5 BTC")            # 0.5 BTC
+parse_money("12.5btc")            # 12.5 BTC
+parse_money("BTC 0.5")            # 0.5 BTC
+```
+
+Text that does not describe exactly one amount raises `ParseError`, and an
+amount finer than its asset is not rounded unless you say how:
+
+```python
+from decimal import ROUND_DOWN
+
+parse_amount("1e-9", BTC)                       # ParseError: needs 9 decimal places
+parse_amount("1e-9", BTC, rounding=ROUND_DOWN)  # 0.00000000 BTC
+parse_amount("NaN", BTC)                        # ParseError
+parse_amount(0.5, BTC)                          # TypeError: float is refused
+parse_money("0.5 XMR")                          # UnknownAsset
+```
+
+`parse_money` looks the symbol up in `ASSETS` by default; pass `assets=` to use
+your own registry. Input longer than 256 characters and exponents beyond ±64
+are refused before any arithmetic happens, so a hostile string cannot become a
+Decimal with millions of digits.
+
+## Formatting
+
+`format()` renders an amount as fixed point text. A wei amount never comes out
+as `1E-18` and a large balance never turns into `1.2345E+7`:
+
+```python
+from decimal import ROUND_DOWN
+
+from cryptomoney import BTC, USDT, Money, from_wei
+
+fee = Money("0.00012500", BTC)
+
+fee.format()                                 # '0.00012500 BTC'
+fee.format(trim=True)                        # '0.000125 BTC'
+fee.format(decimals=4, rounding=ROUND_DOWN)  # '0.0001 BTC'
+fee.format(symbol=False)                     # '0.00012500'
+str(from_wei(1))                             # '0.000000000000000001 ETH'
+Money("1234567.5", USDT).format(group=True)  # '1,234,567.5 USDT'
+```
+
+Shortening an amount needs a rounding mode: `fee.format(decimals=4)` raises
+instead of dropping digits quietly, and `decimals` cannot ask for more places
+than the asset has. `trim=True` drops trailing zeros, `group=True` inserts
+thousands separators, `plus=True` keeps the sign on positive amounts and
+`symbol=False` leaves the ticker out. `str(money)` is `format()` with its
+defaults, and everything it produces can be read back by `parse_money`.
 
 ## Installation
 
