@@ -182,8 +182,14 @@ pip install cryptomoney
 ## Development
 
 ```bash
-pip install -e .
+pip install -e ".[dev]"
+python -m pytest
 ```
+
+The suite is parameterized over every registered asset: round trips between
+amounts, base units and text, the invariants of signs, ordering and hashing,
+and the behaviour at the edges of each asset's precision. Random cases are
+seeded per asset, so a failure comes back on the next run.
 
 ## License
 
