@@ -31,6 +31,77 @@ Money("0.000000001", BTC)        # ValueError: BTC is divisible into 8 decimal p
 Money("1", BTC) + Money("1", ETH)  # CurrencyMismatch
 ```
 
+## Why not float
+
+A `float` is binary. Decimal fractions like 0.1 have no exact binary form, so
+the number you wrote is not the number you got, and the gap surfaces as soon as
+it is added, multiplied or rounded:
+
+```python
+0.1 + 0.2        # 0.30000000000000004
+1.1 * 3          # 3.3000000000000003
+sum([0.1] * 10)  # 0.9999999999999999
+round(2.675, 2)  # 2.67, not 2.68
+int(0.29 * 100)  # 28
+```
+
+In a ledger that becomes three failure modes:
+
+- **Balances stop reconciling.** Credit 0.1 BTC ten times and the balance is
+  0.9999999999999999 BTC. The user asks to withdraw 1 BTC and the check says
+  there is not enough, while every screen that shows 8 decimal places agrees
+  the money is there.
+- **Comparisons are almost true.** `total == expected` and `balance >= amount`
+  decide payouts, and an error of 1e-17 decides them the wrong way. The bug is
+  not in the branch, it is in the two numbers.
+- **Digits fall off the end.** A double holds about 15 to 17 significant
+  decimal digits. An ETH balance in wei needs more than that, so the smallest
+  units stop existing:
+
+  ```python
+  float(10**18 + 1) == float(10**18)  # True, one wei rounded away
+  ```
+
+`Decimal` has none of this: it keeps the digits you wrote, in base ten, and
+`Money` refuses a float at the door rather than converting one.
+
+## Why not integers alone
+
+Base units are exact, so the next instinct is to keep every amount as an `int`
+of satoshi or wei. That is the right storage format and the wrong type to
+compute with, because an integer carries no context:
+
+- **It does not know its asset.** `50_000_000 + 50_000_000` runs whether the
+  operands are satoshi or wei, and `balance > price` compares two chains
+  happily. Nothing raises; the result is simply meaningless.
+- **It does not know its scale.** `12_500_000` is 12.5 USDT at 6 decimals and
+  0.125 BTC at 8. Read a field with the wrong asset's precision and the amount
+  is off by a factor of 100 while still looking plausible.
+- **It does not make division safe, only silent.** `10 // 3` drops a satoshi
+  that has to end up somewhere, and `-10 // 3 == -4` floors towards minus
+  infinity, so a refund of 10 satoshi split three ways pays out 12.
+- **Rates lead back to the type you were avoiding.** A 0.15% fee is
+  `units * 15 // 10_000` at one call site and `int(units * 0.0015)` at the
+  next. The second is a float again, and neither says how it rounds.
+- **Text is written by hand.** `units / 10**8` is another float and prints one
+  satoshi as `1e-08`; reading user input means writing the same shifting code
+  backwards, once per call site.
+
+`Money` keeps the exactness of the integer and adds what it is missing: the
+asset, its precision, and a rounding mode wherever the result may not fit.
+
+```python
+from decimal import ROUND_UP
+
+from cryptomoney import BTC, ETH, Money, from_satoshi
+
+Money("1", BTC) + Money("1", ETH)          # CurrencyMismatch, not a number
+from_satoshi(12_500_000)                   # 0.12500000 BTC, the scale travels along
+Money.from_base_units(-10, BTC).split(3)   # -4, -3, -3 satoshi, still -10 in total
+Money("1", BTC).multiply("0.0015", rounding=ROUND_UP)  # 0.00150000 BTC
+str(from_satoshi(1))                       # '0.00000001 BTC'
+```
+
 ## Arithmetic
 
 Sums and comparisons stay within one asset: mixing two assets raises
