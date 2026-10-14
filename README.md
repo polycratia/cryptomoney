@@ -6,7 +6,7 @@ and wei units, parsing and formatting.
 ## Status
 
 The core value objects (`Asset`, `Money`), the asset registry, arithmetic, base
-unit conversion, parsing and formatting are implemented.
+unit conversion, allocation, parsing and formatting are implemented.
 
 ## Usage
 
@@ -130,6 +130,27 @@ shares = Money("0.00000010", BTC).split(3)
 [str(share) for share in shares]   # ['0.00000004 BTC', '0.00000003 BTC', '0.00000003 BTC']
 sum(shares[1:], shares[0])         # 0.00000010 BTC
 ```
+
+## Allocation
+
+Shares are rarely equal. `allocate` divides an amount in proportion to integer
+weights, again in base units, so the shares still add back up to the amount
+exactly and the leftover units go to the earliest shares:
+
+```python
+from cryptomoney import BTC, Money
+
+payout = Money("0.00000010", BTC)
+
+[share.to_base_units() for share in payout.allocate([3, 1, 1])]  # [6, 2, 2]
+[share.to_base_units() for share in payout.allocate([1, 1, 1])]  # [4, 3, 3]
+Money.from_base_units(1, BTC).allocate([0, 1, 1])                # 0, 1 and 0 satoshi
+```
+
+A weight of zero always gets zero, even while a remainder is still being handed
+out. `split(parts)` is `allocate([1] * parts)`. Weights that cannot describe a
+division are refused rather than guessed: an empty sequence, a negative weight
+and weights that are all zero each raise.
 
 ## Assets
 

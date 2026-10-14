@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import (
     ROUND_05UP,
@@ -99,6 +100,30 @@ def _check_rounding(rounding: str) -> None:
             f"unknown rounding mode {rounding!r}, expected one of "
             f"{', '.join(sorted(_ROUNDING_MODES))}"
         )
+
+
+def _weights(weights: Sequence[int]) -> list[int]:
+    if isinstance(weights, (str, bytes, bytearray)) or not isinstance(
+        weights, Sequence
+    ):
+        raise TypeError(
+            f"weights must be a sequence of ints, got {type(weights).__name__}"
+        )
+    values = list(weights)
+    for weight in values:
+        if isinstance(weight, float):
+            raise _refuse_float(weight)
+        if isinstance(weight, bool) or not isinstance(weight, int):
+            raise TypeError(
+                f"every weight must be an int, got {type(weight).__name__}"
+            )
+        if weight < 0:
+            raise ValueError(f"weights cannot be negative, got {weight}")
+    if not values:
+        raise ValueError("weights must hold at least one weight")
+    if sum(values) == 0:
+        raise ValueError("at least one weight must be above zero")
+    return values
 
 
 def _working_precision(places: int, *values: Decimal) -> int:
@@ -200,21 +225,32 @@ class Money:
             quotient = self.amount / operand
         return Money(_quantize(quotient, self.asset.decimals, rounding), self.asset)
 
+    def allocate(self, weights: Sequence[int]) -> list[Money]:
+        """Divide in proportion to integer weights, in base units, losing nothing."""
+        shares = _weights(weights)
+        total_weight = sum(shares)
+        total = self.to_base_units()
+        sign = -1 if total < 0 else 1
+        magnitude = abs(total)
+        sizes = [magnitude * weight // total_weight for weight in shares]
+        remainder = magnitude - sum(sizes)
+        # Only a weight that was floored down can take a leftover unit, so a zero
+        # weight stays at zero and one pass is enough to place every remainder.
+        for index, weight in enumerate(shares):
+            if remainder == 0:
+                break
+            if weight:
+                sizes[index] += 1
+                remainder -= 1
+        return [Money.from_base_units(sign * size, self.asset) for size in sizes]
+
     def split(self, parts: int) -> list[Money]:
         """Split into parts that add back up to this amount, exactly."""
         if isinstance(parts, bool) or not isinstance(parts, int):
             raise TypeError(f"parts must be an int, got {type(parts).__name__}")
         if parts < 1:
             raise ValueError(f"parts must be at least 1, got {parts}")
-        total = self.to_base_units()
-        sign = -1 if total < 0 else 1
-        share, remainder = divmod(abs(total), parts)
-        return [
-            Money.from_base_units(
-                sign * (share + (1 if index < remainder else 0)), self.asset
-            )
-            for index in range(parts)
-        ]
+        return self.allocate([1] * parts)
 
     def format(
         self,
@@ -291,7 +327,7 @@ class Money:
     def __truediv__(self, divisor: object) -> Money:
         raise TypeError(
             "/ is refused because the rounding of the result would be implicit. "
-            "Use .divide(divisor, rounding=...) or .split(parts)."
+            "Use .divide(divisor, rounding=...), .split(parts) or .allocate(weights)."
         )
 
     def __neg__(self) -> Money:

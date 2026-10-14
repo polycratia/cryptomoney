@@ -28,6 +28,18 @@ FORMATS = [
 ]
 FORMAT_IDS = ["plain", "trim", "group", "trim-group", "plus"]
 
+WEIGHTS = [
+    [1],
+    [1, 1],
+    [3, 1, 1],
+    [1, 0, 1],
+    [0, 0, 1],
+    [5, 3, 2],
+    [7, 7, 7, 1],
+    [1_000_000, 1],
+]
+WEIGHT_IDS = ["-".join(str(weight) for weight in weights) for weights in WEIGHTS]
+
 SATOSHI_CASES = [0, 1, -1, 12_345_678, 99_999_999, 100_000_000, 2_100_000_000_000_000]
 WEI_CASES = [0, 1, -1, 10**18 - 1, 10**18, 123_456_789_012_345_678_901]
 
@@ -123,6 +135,67 @@ def test_split_conserves_the_total(asset, base_units, parts):
         for share in shares[1:]:
             total = total + share
         assert total == money
+
+
+@pytest.mark.parametrize("parts", [1, 2, 3, 7, 100])
+def test_split_is_allocate_with_equal_weights(asset, base_units, parts):
+    for units in base_units[:20]:
+        money = Money.from_base_units(units, asset)
+        assert money.split(parts) == money.allocate([1] * parts)
+
+
+@pytest.mark.parametrize("weights", WEIGHTS, ids=WEIGHT_IDS)
+def test_allocate_conserves_the_total(asset, base_units, weights):
+    total_weight = sum(weights)
+    for units in base_units[:20]:
+        money = Money.from_base_units(units, asset)
+        shares = money.allocate(weights)
+        assert len(shares) == len(weights)
+        sizes = [share.to_base_units() for share in shares]
+        assert sum(sizes) == units
+        total = shares[0]
+        for share in shares[1:]:
+            total = total + share
+        assert total == money
+        for weight, size in zip(weights, sizes):
+            ideal = abs(units) * weight // total_weight
+            assert abs(size) - ideal in (0, 1)
+            if weight == 0:
+                assert size == 0
+
+
+def test_allocate_hands_the_remainder_to_the_earliest_shares():
+    tenth = Money("0.00000010", BTC)
+    assert [share.to_base_units() for share in tenth.allocate([3, 1, 1])] == [6, 2, 2]
+    assert [share.to_base_units() for share in tenth.allocate([1, 1, 1])] == [4, 3, 3]
+    assert [share.to_base_units() for share in (-tenth).allocate([1, 1, 1])] == [
+        -4,
+        -3,
+        -3,
+    ]
+    one = Money.from_base_units(1, BTC)
+    assert [share.to_base_units() for share in one.allocate([0, 1, 1])] == [0, 1, 0]
+    assert [share.to_base_units() for share in one.allocate([1, 1, 0])] == [1, 0, 0]
+    assert [share.to_base_units() for share in Money.zero(BTC).allocate([2, 1])] == [
+        0,
+        0,
+    ]
+
+
+def test_allocate_refuses_weights_that_cannot_divide():
+    money = Money("1", BTC)
+    with pytest.raises(ValueError):
+        money.allocate([])
+    with pytest.raises(ValueError):
+        money.allocate([0, 0])
+    with pytest.raises(ValueError):
+        money.allocate([2, -1])
+    with pytest.raises(TypeError):
+        money.allocate([1, "2"])
+    with pytest.raises(TypeError):
+        money.allocate([1, 1.0])
+    with pytest.raises(TypeError):
+        money.allocate(3)
 
 
 def test_satoshi_round_trip():
