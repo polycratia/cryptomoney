@@ -54,13 +54,21 @@ def test_ordering_follows_base_units(asset, base_units):
         assert smaller != larger
 
 
-def test_equal_amounts_hash_alike(asset, base_units):
+def test_every_amount_carries_the_asset_precision(asset, amounts):
+    for amount in amounts:
+        money = Money(amount, asset)
+        assert money.amount.as_tuple().exponent == -asset.decimals
+
+
+def test_equal_amounts_hash_and_print_alike(asset, base_units):
     for units in base_units[:40]:
         money = Money.from_base_units(units, asset)
         trimmed = Money(money.format(symbol=False, trim=True), asset)
         assert trimmed == money
         assert hash(trimmed) == hash(money)
         assert len({money, trimmed}) == 1
+        assert str(trimmed) == str(money)
+        assert trimmed.amount.as_tuple() == money.amount.as_tuple()
 
 
 def test_parse_money_uses_the_registry_it_is_given(asset):

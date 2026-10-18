@@ -18,8 +18,9 @@ from cryptomoney import BTC, Money
 balance = Money(Decimal("0.5"), BTC)
 fee = Money("0.000125", BTC)
 
-print(balance - fee)  # 0.499875 BTC
-print(3 * fee)        # 0.000375 BTC
+print(balance - fee)                      # 0.49987500 BTC
+print(3 * fee)                            # 0.00037500 BTC
+print((3 * fee).format(trim=True))        # 0.000375 BTC
 ```
 
 `Money` is immutable, hashable and bound to one asset. Floats are refused at
@@ -212,12 +213,12 @@ symbol may come before, after or attached to the number:
 ```python
 from cryptomoney import BTC, USDT, parse_amount, parse_money
 
-parse_amount("0.5", BTC)          # 0.5 BTC
-parse_amount(" 1 234.50 ", USDT)  # 1234.50 USDT
-parse_amount("1.25e3", USDT)      # 1250 USDT
-parse_money("0.5 BTC")            # 0.5 BTC
-parse_money("12.5btc")            # 12.5 BTC
-parse_money("BTC 0.5")            # 0.5 BTC
+parse_amount("0.5", BTC)          # 0.50000000 BTC
+parse_amount(" 1 234.50 ", USDT)  # 1234.500000 USDT
+parse_amount("1.25e3", USDT)      # 1250.000000 USDT
+parse_money("0.5 BTC")            # 0.50000000 BTC
+parse_money("12.5btc")            # 12.50000000 BTC
+parse_money("BTC 0.5")            # 0.50000000 BTC
 ```
 
 Text that does not describe exactly one amount raises `ParseError`, and an
@@ -255,7 +256,7 @@ fee.format(trim=True)                        # '0.000125 BTC'
 fee.format(decimals=4, rounding=ROUND_DOWN)  # '0.0001 BTC'
 fee.format(symbol=False)                     # '0.00012500'
 str(from_wei(1))                             # '0.000000000000000001 ETH'
-Money("1234567.5", USDT).format(group=True)  # '1,234,567.5 USDT'
+Money("1234567.5", USDT).format(group=True)  # '1,234,567.500000 USDT'
 ```
 
 Shortening an amount needs a rounding mode: `fee.format(decimals=4)` raises
@@ -264,6 +265,25 @@ than the asset has. `trim=True` drops trailing zeros, `group=True` inserts
 thousands separators, `plus=True` keeps the sign on positive amounts and
 `symbol=False` leaves the ticker out. `str(money)` is `format()` with its
 defaults, and everything it produces can be read back by `parse_money`.
+
+### One canonical form
+
+An amount is quantized to its asset's precision the moment it is built, the
+shape `from_base_units` already produced. Amounts that compare equal are then
+the very same digits, so they share one `str`, one `format()` and one
+`as_tuple`:
+
+```python
+from cryptomoney import BTC, Money, from_satoshi
+
+Money("0.5", BTC) == from_satoshi(50_000_000)    # True, as before
+str(Money("0.5", BTC))                           # '0.50000000 BTC'
+str(from_satoshi(50_000_000))                    # '0.50000000 BTC'
+Money("0.5", BTC).format(trim=True)              # '0.5 BTC', the short form
+```
+
+Nothing is rounded on the way in: an amount finer than its asset is still
+refused at construction, so padding with zeros is all that ever happens.
 
 ## Installation
 

@@ -54,6 +54,18 @@ def _decimals_used(amount: Decimal) -> int:
     return max(0, -int(amount.as_tuple().exponent))
 
 
+def _significant_decimals(amount: Decimal) -> int:
+    """The decimal places the amount needs once its trailing zeros are dropped."""
+    digits = amount.as_tuple().digits
+    exponent = int(amount.as_tuple().exponent)
+    if not any(digits):
+        return 0
+    while exponent < 0 and digits[-1] == 0:
+        digits = digits[:-1]
+        exponent += 1
+    return max(0, -exponent)
+
+
 def _to_decimal(value: AmountLike, asset: Asset) -> Decimal:
     if isinstance(value, float):
         raise _refuse_float(value)
@@ -73,7 +85,10 @@ def _to_decimal(value: AmountLike, asset: Asset) -> Decimal:
             f"{asset.symbol} is divisible into {asset.decimals} decimal places, "
             f"but {value!r} needs {used}"
         )
-    return amount
+    # The amount already fits the asset, so this only pads it out to the asset's
+    # precision and equal amounts end up as the very same digits.
+    amount = _quantize(amount, asset.decimals, ROUND_HALF_UP)
+    return amount.copy_abs() if amount.is_zero() else amount
 
 
 def _operand(value: AmountLike, name: str) -> Decimal:
@@ -126,12 +141,21 @@ def _weights(weights: Sequence[int]) -> list[int]:
     return values
 
 
+def _digits_of(value: Decimal) -> int:
+    return len(value.as_tuple().digits) + max(int(value.as_tuple().exponent), 0)
+
+
 def _working_precision(places: int, *values: Decimal) -> int:
-    digits = max(
-        len(value.as_tuple().digits) + max(int(value.as_tuple().exponent), 0)
-        for value in values
-    )
-    return digits + places + 10
+    return max(_digits_of(value) for value in values) + places + 10
+
+
+def _exact_precision(*values: Decimal) -> int:
+    """Enough digits that a sum, difference or product is never rounded.
+
+    Every amount carries its asset's full precision, so the default context of
+    28 digits is not wide enough for a large balance in wei.
+    """
+    return sum(_digits_of(value) for value in values) + 10
 
 
 def _quantize(amount: Decimal, places: int, rounding: str) -> Decimal:
@@ -208,7 +232,7 @@ class Money:
         _check_rounding(rounding)
         operand = _operand(factor, "factor")
         with localcontext() as ctx:
-            ctx.prec = _working_precision(self.asset.decimals, self.amount, operand)
+            ctx.prec = _exact_precision(self.amount, operand)
             ctx.rounding = rounding
             product = self.amount * operand
         return Money(_quantize(product, self.asset.decimals, rounding), self.asset)
@@ -276,12 +300,12 @@ class Money:
                     f"decimals must be between 0 and {self.asset.decimals} for "
                     f"{self.asset.symbol}, got {decimals}"
                 )
-            if decimals < _decimals_used(amount) and rounding is None:
+            if decimals < _significant_decimals(amount) and rounding is None:
                 raise ValueError(
                     f"{amount:f} does not fit into {decimals} decimal places, "
                     "pass rounding=... to say how it should be shortened"
                 )
-            # When the amount already fits, the mode only pads it with zeros.
+            # When the amount already fits, the mode only pads or drops zeros.
             amount = _quantize(amount, decimals, rounding or ROUND_HALF_UP)
         integer, _, fraction = f"{amount:f}".lstrip("-").partition(".")
         if trim:
@@ -301,13 +325,19 @@ class Money:
         if not isinstance(other, Money):
             return NotImplemented
         self._require_same_asset(other)
-        return Money(self.amount + other.amount, self.asset)
+        with localcontext() as ctx:
+            ctx.prec = _exact_precision(self.amount, other.amount)
+            total = self.amount + other.amount
+        return Money(total, self.asset)
 
     def __sub__(self, other: object) -> Money:
         if not isinstance(other, Money):
             return NotImplemented
         self._require_same_asset(other)
-        return Money(self.amount - other.amount, self.asset)
+        with localcontext() as ctx:
+            ctx.prec = _exact_precision(self.amount, other.amount)
+            difference = self.amount - other.amount
+        return Money(difference, self.asset)
 
     def __mul__(self, factor: int) -> Money:
         if isinstance(factor, float):
@@ -319,7 +349,11 @@ class Money:
             )
         if isinstance(factor, bool) or not isinstance(factor, int):
             return NotImplemented
-        return Money(self.amount * factor, self.asset)
+        operand = Decimal(factor)
+        with localcontext() as ctx:
+            ctx.prec = _exact_precision(self.amount, operand)
+            product = self.amount * operand
+        return Money(product, self.asset)
 
     def __rmul__(self, factor: int) -> Money:
         return self.__mul__(factor)
@@ -331,13 +365,13 @@ class Money:
         )
 
     def __neg__(self) -> Money:
-        return Money(-self.amount, self.asset)
+        return Money(self.amount.copy_negate(), self.asset)
 
     def __pos__(self) -> Money:
         return self
 
     def __abs__(self) -> Money:
-        return Money(abs(self.amount), self.asset)
+        return Money(self.amount.copy_abs(), self.asset)
 
     def __lt__(self, other: object) -> bool:
         if not isinstance(other, Money):

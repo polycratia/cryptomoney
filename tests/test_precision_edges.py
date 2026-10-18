@@ -15,7 +15,17 @@ from decimal import (
 
 import pytest
 
-from cryptomoney import BTC, ETH, USDT, Asset, Money, ParseError, from_wei, parse_amount
+from cryptomoney import (
+    BTC,
+    ETH,
+    USDT,
+    Asset,
+    Money,
+    ParseError,
+    from_satoshi,
+    from_wei,
+    parse_amount,
+)
 
 FINEST = Asset("FINE", 36)
 COARSE = Asset("POINTS", 0)
@@ -106,6 +116,15 @@ def test_large_amounts_keep_every_digit():
     assert quotient.multiply(3, rounding=ROUND_DOWN).to_base_units() == third * 3
 
 
+def test_exact_arithmetic_survives_the_padded_precision():
+    big = Money.from_base_units(10**38, ETH)
+    assert (big + from_wei(1)).to_base_units() == 10**38 + 1
+    assert (big - from_wei(1)).to_base_units() == 10**38 - 1
+    assert (big * 1000).to_base_units() == 10**41
+    assert (-big).to_base_units() == -(10**38)
+    assert abs(-big).to_base_units() == 10**38
+
+
 def test_whole_factors_stay_exact(asset):
     money = Money.from_base_units(123_456_789, asset)
     assert (money * 1000).to_base_units() == 123_456_789_000
@@ -114,7 +133,13 @@ def test_whole_factors_stay_exact(asset):
 
 def test_format_never_uses_scientific_notation():
     assert str(from_wei(1)) == "0.000000000000000001 ETH"
-    assert Money(Decimal("1E+30"), ETH).format(symbol=False) == "1" + "0" * 30
+    assert (
+        Money(Decimal("1E+30"), ETH).format(symbol=False)
+        == "1" + "0" * 30 + "." + "0" * 18
+    )
+    assert (
+        Money(Decimal("1E+30"), ETH).format(symbol=False, trim=True) == "1" + "0" * 30
+    )
     assert (
         Money.from_base_units(10**36, ETH).format(symbol=False)
         == "1" + "0" * 18 + "." + "0" * 18
@@ -126,8 +151,13 @@ def test_shortening_and_padding_the_fraction():
     assert fee.format() == "0.00012500 BTC"
     assert fee.format(trim=True) == "0.000125 BTC"
     assert fee.format(decimals=4, rounding=ROUND_DOWN) == "0.0001 BTC"
+    assert fee.format(decimals=6) == "0.000125 BTC"
     assert Money("0.5", BTC).format(decimals=8) == "0.50000000 BTC"
-    assert Money("1234567.5", USDT).format(group=True) == "1,234,567.5 USDT"
+    assert Money("0.5", BTC).format(decimals=2) == "0.50 BTC"
+    assert Money("1234567.5", USDT).format(group=True) == "1,234,567.500000 USDT"
+    assert (
+        Money("1234567.5", USDT).format(group=True, trim=True) == "1,234,567.5 USDT"
+    )
     assert Money.from_base_units(0, BTC).format(trim=True, symbol=False) == "0"
     with pytest.raises(ValueError):
         fee.format(decimals=4)
@@ -147,13 +177,16 @@ def test_split_hands_the_remainder_to_the_first_shares():
         Money("1", BTC).split(0)
 
 
-def test_trailing_zeros_do_not_change_the_value():
+def test_equal_amounts_share_one_text():
     plain = Money(Decimal("0.5"), BTC)
     padded = Money(Decimal("0.50000000"), BTC)
-    assert plain == padded
-    assert hash(plain) == hash(padded)
+    satoshi = from_satoshi(50_000_000)
+    assert plain == padded == satoshi
+    assert hash(plain) == hash(padded) == hash(satoshi)
     assert plain.to_base_units() == padded.to_base_units() == 50_000_000
-    assert str(plain) != str(padded)
+    assert str(plain) == str(padded) == str(satoshi) == "0.50000000 BTC"
+    assert plain.amount.as_tuple() == satoshi.amount.as_tuple()
+    assert plain.format(trim=True) == "0.5 BTC"
 
 
 def test_negative_zero_is_zero():
@@ -161,12 +194,14 @@ def test_negative_zero_is_zero():
     assert money.is_zero
     assert money.to_base_units() == 0
     assert money.format(symbol=False) == "0.00000000"
+    assert money.amount.as_tuple() == Money.zero(BTC).amount.as_tuple()
 
 
 @pytest.mark.parametrize("amount", ["1E+2", "1E-8", "12.5E+3", "0E-8"])
 def test_exponent_amounts_round_trip(amount):
     money = Money(Decimal(amount), BTC)
     assert Money.from_base_units(money.to_base_units(), BTC) == money
+    assert money.amount.as_tuple().exponent == -BTC.decimals
 
 
 def test_parse_refuses_hostile_input():
