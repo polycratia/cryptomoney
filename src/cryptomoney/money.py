@@ -249,6 +249,20 @@ class Money:
             quotient = self.amount / operand
         return Money(_quantize(quotient, self.asset.decimals, rounding), self.asset)
 
+    def convert(self, to: Asset, rate: AmountLike, *, rounding: str) -> Money:
+        """Convert at a rate of ``to`` units per one unit of this asset."""
+        if not isinstance(to, Asset):
+            raise TypeError(f"to must be an Asset, got {type(to).__name__}")
+        _check_rounding(rounding)
+        operand = _operand(rate, "rate")
+        if operand <= 0:
+            raise ValueError(f"rate must be above zero, got {rate!r}")
+        with localcontext() as ctx:
+            ctx.prec = _exact_precision(self.amount, operand)
+            ctx.rounding = rounding
+            converted = self.amount * operand
+        return Money(_quantize(converted, to.decimals, rounding), to)
+
     def allocate(self, weights: Sequence[int]) -> list[Money]:
         """Divide in proportion to integer weights, in base units, losing nothing."""
         shares = _weights(weights)

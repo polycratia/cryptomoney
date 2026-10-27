@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from decimal import ROUND_DOWN, Decimal, localcontext
+from decimal import ROUND_DOWN, ROUND_HALF_UP, ROUND_UP, Decimal, localcontext
 
 import pytest
 
 from cryptomoney import (
     BTC,
     ETH,
+    USDT,
     CurrencyMismatch,
     Money,
     from_satoshi,
@@ -48,6 +49,12 @@ def _scaled(amount: Decimal, scale: int) -> Decimal:
     with localcontext() as ctx:
         ctx.prec = 200
         return amount * scale
+
+
+def _inverse(rate: Decimal) -> Decimal:
+    with localcontext() as ctx:
+        ctx.prec = 60
+        return Decimal(1) / rate
 
 
 def test_base_units_round_trip(asset, base_units):
@@ -196,6 +203,58 @@ def test_allocate_refuses_weights_that_cannot_divide():
         money.allocate([1, 1.0])
     with pytest.raises(TypeError):
         money.allocate(3)
+
+
+def test_convert_quotes_both_directions():
+    rate = Decimal("62500.5")
+    btc = Money("0.4", BTC)
+    usdt = btc.convert(USDT, rate, rounding=ROUND_HALF_UP)
+    assert usdt == Money("25000.2", USDT)
+    assert usdt.convert(BTC, _inverse(rate), rounding=ROUND_HALF_UP) == btc
+
+    negative = -btc
+    assert negative.convert(USDT, rate, rounding=ROUND_HALF_UP) == -usdt
+    assert Money.zero(BTC).convert(USDT, rate, rounding=ROUND_HALF_UP).is_zero
+
+
+def test_convert_carries_the_target_asset(asset):
+    one = Money.from_base_units(10**asset.decimals, asset)
+    for target in (BTC, ETH, USDT):
+        converted = one.convert(target, "2", rounding=ROUND_DOWN)
+        assert converted.asset == target
+        assert converted.amount == Decimal(2)
+        assert converted.to_base_units() == 2 * 10**target.decimals
+
+
+def test_convert_rounds_at_the_target_precision():
+    satoshi = Money.from_base_units(1, BTC)
+    assert satoshi.convert(USDT, "0.5", rounding=ROUND_DOWN).to_base_units() == 0
+    assert satoshi.convert(USDT, "0.5", rounding=ROUND_UP).to_base_units() == 1
+    assert from_wei(1).convert(BTC, "0.03", rounding=ROUND_UP).to_base_units() == 1
+    assert (
+        Money("1", ETH).convert(BTC, "0.0315", rounding=ROUND_DOWN).to_base_units()
+        == 3_150_000
+    )
+
+
+def test_convert_refuses_a_rate_that_is_not_a_quote():
+    money = Money("1", BTC)
+    with pytest.raises(TypeError):
+        money.convert(USDT, 60000.0, rounding=ROUND_DOWN)
+    with pytest.raises(ValueError):
+        money.convert(USDT, "0", rounding=ROUND_DOWN)
+    with pytest.raises(ValueError):
+        money.convert(USDT, "-1", rounding=ROUND_DOWN)
+    with pytest.raises(ValueError):
+        money.convert(USDT, Decimal("NaN"), rounding=ROUND_DOWN)
+    with pytest.raises(ValueError):
+        money.convert(USDT, Decimal("Infinity"), rounding=ROUND_DOWN)
+    with pytest.raises(TypeError):
+        money.convert("USDT", "1", rounding=ROUND_DOWN)
+    with pytest.raises(ValueError):
+        money.convert(USDT, "1", rounding="ROUND_SOMEHOW")
+    with pytest.raises(TypeError):
+        money.convert(USDT, "1")
 
 
 def test_satoshi_round_trip():

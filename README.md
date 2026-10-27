@@ -6,7 +6,8 @@ and wei units, parsing and formatting.
 ## Status
 
 The core value objects (`Asset`, `Money`), the asset registry, arithmetic, base
-unit conversion, allocation, parsing and formatting are implemented.
+unit conversion, allocation, conversion at a rate, parsing and formatting are
+implemented.
 
 ## Usage
 
@@ -202,6 +203,41 @@ An amount finer than its asset cannot be constructed in the first place, so a
 conversion never has a remainder to round away. `to_base_units()` and
 `from_base_units()` work for any asset; `to_satoshi`, `from_satoshi`, `to_wei`
 and `from_wei` are the named shorthands for BTC and ETH.
+
+## Conversion at a rate
+
+`convert` moves an amount into another asset. The rate reads in one direction
+only: units of the target per one unit of this asset. The result is quantized
+to the target's precision with the mode you pass, and it carries the target
+asset from there on:
+
+```python
+from decimal import ROUND_DOWN, ROUND_HALF_UP
+
+from cryptomoney import BTC, USDT, Money
+
+Money("0.4", BTC).convert(USDT, "62500.5", rounding=ROUND_HALF_UP)
+# 25000.200000 USDT
+Money("100", USDT).convert(BTC, "0.000016", rounding=ROUND_DOWN)
+# 0.00160000 BTC
+```
+
+The quote in the other direction is the inverse rate, passed explicitly: a
+reverse quote is never inferred, because the rounding of the inverse is a
+decision about money and belongs to the caller. A rate is read like any other
+amount, so a float is refused, and zero, a negative number and a non-finite
+value are refused too:
+
+```python
+Money("1", BTC).convert(USDT, 60000.0, rounding=ROUND_DOWN)  # TypeError
+Money("1", BTC).convert(USDT, "0", rounding=ROUND_DOWN)      # ValueError
+Money("1", BTC).convert(USDT, "-1", rounding=ROUND_DOWN)     # ValueError
+Money("1", BTC).convert(USDT, "1")                           # TypeError, no default mode
+```
+
+Converting into a coarser asset is where the mode earns its keep: one satoshi
+at 0.5 USDT per BTC is five billionths of a USDT, which `ROUND_DOWN` turns
+into nothing and `ROUND_UP` into one micro-USDT.
 
 ## Parsing
 
