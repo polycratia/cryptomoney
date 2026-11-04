@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decimal import ROUND_DOWN
+from decimal import ROUND_CEILING, ROUND_DOWN, ROUND_FLOOR
 
 import pytest
 
@@ -14,6 +14,13 @@ from cryptomoney import (
     parse_amount,
     parse_money,
 )
+from cryptomoney.money import _ROUNDING_MODES
+
+# Every mode but the two that lean towards an infinity is defined as towards or
+# away from zero, so it treats an amount and its negation alike.
+ASYMMETRIC_MODES = frozenset({ROUND_FLOOR, ROUND_CEILING})
+SYMMETRIC_MODES = tuple(sorted(_ROUNDING_MODES - ASYMMETRIC_MODES))
+SYMMETRIC_IDS = tuple(mode.removeprefix("ROUND_").lower() for mode in SYMMETRIC_MODES)
 
 
 def test_registry_resolves_every_symbol(asset):
@@ -42,6 +49,38 @@ def test_sign_round_trips(asset, base_units):
         assert abs(money).to_base_units() == abs(units)
         assert money.is_negative == (units < 0)
         assert money.is_positive == (units > 0)
+
+
+@pytest.mark.parametrize("rounding", SYMMETRIC_MODES, ids=SYMMETRIC_IDS)
+def test_rounding_is_symmetric_around_zero(asset, rounding):
+    finer = [
+        f"5E-{asset.decimals + 1}",
+        f"1E-{asset.decimals + 1}",
+        f"7E-{asset.decimals + 1}",
+        f"15E-{asset.decimals + 2}",
+        f"25E-{asset.decimals + 2}",
+    ]
+    for text in finer:
+        positive = parse_amount(text, asset, rounding=rounding)
+        negative = parse_amount(f"-{text}", asset, rounding=rounding)
+        assert negative.to_base_units() == -positive.to_base_units()
+        assert negative == -positive
+
+    money = Money.from_base_units(10**asset.decimals + 1, asset)
+    assert (-money).divide(3, rounding=rounding) == -money.divide(3, rounding=rounding)
+    assert (-money).multiply("0.3", rounding=rounding) == -money.multiply(
+        "0.3", rounding=rounding
+    )
+
+
+@pytest.mark.parametrize("rounding", sorted(ASYMMETRIC_MODES))
+def test_floor_and_ceiling_are_the_asymmetric_modes(asset, rounding):
+    assert rounding in _ROUNDING_MODES
+    assert rounding not in SYMMETRIC_MODES
+    half = f"5E-{asset.decimals + 1}"
+    positive = parse_amount(half, asset, rounding=rounding)
+    negative = parse_amount(f"-{half}", asset, rounding=rounding)
+    assert negative.to_base_units() != -positive.to_base_units()
 
 
 def test_ordering_follows_base_units(asset, base_units):
