@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from decimal import (
+    ROUND_05UP,
     ROUND_CEILING,
     ROUND_DOWN,
     ROUND_FLOOR,
@@ -104,6 +105,13 @@ def test_division_rounds_at_the_last_unit():
     assert (
         Money("1", BTC).divide(3, rounding=ROUND_HALF_UP).to_base_units() == 33_333_333
     )
+    # 16 satoshi / 3 is 5.33 satoshi, so truncation ends in a 5 and ROUND_05UP
+    # is the one mode that then steps away from zero.
+    sixteen = Money.from_base_units(16, BTC)
+    assert sixteen.divide(3, rounding=ROUND_DOWN).to_base_units() == 5
+    assert sixteen.divide(3, rounding=ROUND_05UP).to_base_units() == 6
+    assert (-sixteen).divide(3, rounding=ROUND_DOWN).to_base_units() == -5
+    assert (-sixteen).divide(3, rounding=ROUND_05UP).to_base_units() == -6
     with pytest.raises(ZeroDivisionError):
         Money("1", BTC).divide(0, rounding=ROUND_DOWN)
 
