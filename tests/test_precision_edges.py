@@ -233,6 +233,13 @@ def test_shortening_and_padding_the_fraction():
     with pytest.raises(ValueError):
         refund.format(decimals=4)
 
+    # -15 satoshi at 7 places sits exactly halfway between two of them, so the
+    # mode alone decides the last digit and the fraction is still padded out.
+    fifteen = Money.from_base_units(-15, BTC)
+    assert fifteen.format(decimals=7, rounding=ROUND_DOWN) == "-0.0000001 BTC"
+    assert fifteen.format(decimals=7, rounding=ROUND_FLOOR) == "-0.0000002 BTC"
+    assert fifteen.format(decimals=7, rounding=ROUND_CEILING) == "-0.0000001 BTC"
+
 
 def test_split_hands_the_remainder_to_the_first_shares():
     shares = Money("0.00000010", BTC).split(3)
