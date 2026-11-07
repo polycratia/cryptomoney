@@ -274,6 +274,13 @@ def test_shortening_past_the_half_takes_the_half_modes_along():
     # mode that takes a tie away from zero, keeps the truncated digit.
     fourteen = Money.from_base_units(-14, BTC)
     assert fourteen.format(decimals=7, rounding=ROUND_HALF_UP) == "-0.0000001 BTC"
+    # Towards zero and towards minus infinity only agree below zero, so the same
+    # 14 satoshi above it is what tells ROUND_DOWN from ROUND_CEILING and
+    # ROUND_UP from ROUND_FLOOR.
+    assert (-fourteen).format(decimals=7, rounding=ROUND_DOWN) == "0.0000001 BTC"
+    assert (-fourteen).format(decimals=7, rounding=ROUND_CEILING) == "0.0000002 BTC"
+    assert (-fourteen).format(decimals=7, rounding=ROUND_UP) == "0.0000002 BTC"
+    assert (-fourteen).format(decimals=7, rounding=ROUND_FLOOR) == "0.0000001 BTC"
 
 
 def test_shortening_a_half_that_truncates_onto_a_five():
