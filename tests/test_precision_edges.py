@@ -235,10 +235,12 @@ def test_shortening_and_padding_the_fraction():
 
     # -15 satoshi at 7 places sits exactly halfway between two of them, so the
     # mode alone decides the last digit and the fraction is still padded out.
+    # Truncating leaves an odd 1 there, so ROUND_HALF_EVEN steps to the even 2.
     fifteen = Money.from_base_units(-15, BTC)
     assert fifteen.format(decimals=7, rounding=ROUND_DOWN) == "-0.0000001 BTC"
     assert fifteen.format(decimals=7, rounding=ROUND_FLOOR) == "-0.0000002 BTC"
     assert fifteen.format(decimals=7, rounding=ROUND_CEILING) == "-0.0000001 BTC"
+    assert fifteen.format(decimals=7, rounding=ROUND_HALF_EVEN) == "-0.0000002 BTC"
     assert (
         Money.from_base_units(15, BTC).format(decimals=7, rounding=ROUND_DOWN)
         == "0.0000001 BTC"
