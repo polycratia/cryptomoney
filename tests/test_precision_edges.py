@@ -239,6 +239,10 @@ def test_shortening_and_padding_the_fraction():
     assert fifteen.format(decimals=7, rounding=ROUND_DOWN) == "-0.0000001 BTC"
     assert fifteen.format(decimals=7, rounding=ROUND_FLOOR) == "-0.0000002 BTC"
     assert fifteen.format(decimals=7, rounding=ROUND_CEILING) == "-0.0000001 BTC"
+    assert (
+        Money.from_base_units(15, BTC).format(decimals=7, rounding=ROUND_DOWN)
+        == "0.0000001 BTC"
+    )
 
 
 def test_split_hands_the_remainder_to_the_first_shares():
