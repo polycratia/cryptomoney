@@ -262,6 +262,20 @@ def test_shortening_past_the_half_takes_the_half_modes_along():
     )
 
 
+def test_shortening_a_half_that_truncates_onto_a_five():
+    # -55 satoshi at 7 places is another exact half, but truncating it ends in a
+    # 5, which is the one digit ROUND_05UP steps away from zero on. The two down
+    # modes keep the truncated digit, the tie included.
+    fifty_five = Money.from_base_units(-55, BTC)
+    assert fifty_five.format(decimals=7, rounding=ROUND_DOWN) == "-0.0000005 BTC"
+    assert fifty_five.format(decimals=7, rounding=ROUND_HALF_DOWN) == "-0.0000005 BTC"
+    assert fifty_five.format(decimals=7, rounding=ROUND_05UP) == "-0.0000006 BTC"
+    assert (
+        Money.from_base_units(55, BTC).format(decimals=7, rounding=ROUND_05UP)
+        == "0.0000006 BTC"
+    )
+
+
 def test_split_hands_the_remainder_to_the_first_shares():
     shares = Money("0.00000010", BTC).split(3)
     assert [share.to_base_units() for share in shares] == [4, 3, 3]
