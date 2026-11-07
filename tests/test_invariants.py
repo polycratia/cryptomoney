@@ -22,6 +22,10 @@ ASYMMETRIC_MODES = frozenset({ROUND_FLOOR, ROUND_CEILING})
 SYMMETRIC_MODES = tuple(sorted(_ROUNDING_MODES - ASYMMETRIC_MODES))
 SYMMETRIC_IDS = tuple(mode.removeprefix("ROUND_").lower() for mode in SYMMETRIC_MODES)
 
+# Factors whose product lands below the asset's precision for most amounts, so
+# the rounding mode is what decides the last base unit.
+FRACTIONAL_FACTORS = ("0.3", "0.125", "2.5", "-1.0625")
+
 
 def test_registry_resolves_every_symbol(asset):
     assert ASSETS.get(asset.symbol) is asset
@@ -52,7 +56,7 @@ def test_sign_round_trips(asset, base_units):
 
 
 @pytest.mark.parametrize("rounding", SYMMETRIC_MODES, ids=SYMMETRIC_IDS)
-def test_rounding_is_symmetric_around_zero(asset, rounding):
+def test_rounding_is_symmetric_around_zero(asset, base_units, rounding):
     finer = [
         f"5E-{asset.decimals + 1}",
         f"1E-{asset.decimals + 1}",
@@ -68,9 +72,14 @@ def test_rounding_is_symmetric_around_zero(asset, rounding):
 
     money = Money.from_base_units(10**asset.decimals + 1, asset)
     assert (-money).divide(3, rounding=rounding) == -money.divide(3, rounding=rounding)
-    assert (-money).multiply("0.3", rounding=rounding) == -money.multiply(
-        "0.3", rounding=rounding
-    )
+
+    for factor in FRACTIONAL_FACTORS:
+        for units in base_units[:40]:
+            money = Money.from_base_units(units, asset)
+            scaled = money.multiply(factor, rounding=rounding)
+            negated = (-money).multiply(factor, rounding=rounding)
+            assert negated == -scaled
+            assert negated.to_base_units() == -scaled.to_base_units()
 
 
 @pytest.mark.parametrize("rounding", sorted(ASYMMETRIC_MODES))
