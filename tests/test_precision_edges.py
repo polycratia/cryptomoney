@@ -127,6 +127,32 @@ def test_division_rounds_at_the_last_unit():
         Money("1", BTC).divide(0, rounding=ROUND_DOWN)
 
 
+def test_multiply_on_a_negative_amount_floors_towards_minus_infinity():
+    # -10 satoshi times 0.333 is -3.33 satoshi: ROUND_FLOOR steps away from zero
+    # because it heads towards minus infinity, and ROUND_CEILING truncates.
+    ten = Money.from_base_units(-10, BTC)
+    assert ten.multiply("0.333", rounding=ROUND_FLOOR).to_base_units() == -4
+    assert ten.multiply("0.333", rounding=ROUND_CEILING).to_base_units() == -3
+    # The same magnitude with the sign flipped exchanges the two modes.
+    assert (-ten).multiply("0.333", rounding=ROUND_FLOOR).to_base_units() == 3
+    assert (-ten).multiply("0.333", rounding=ROUND_CEILING).to_base_units() == 4
+    # A product that already fits leaves both modes nothing to decide.
+    assert ten.multiply("0.5", rounding=ROUND_FLOOR).to_base_units() == -5
+    assert ten.multiply("0.5", rounding=ROUND_CEILING).to_base_units() == -5
+
+    satoshi = Money.from_base_units(-1, BTC)
+    assert satoshi.multiply("0.5", rounding=ROUND_FLOOR).to_base_units() == -1
+    assert satoshi.multiply("0.5", rounding=ROUND_CEILING).to_base_units() == 0
+
+    whole = Money("-1.5", BTC)
+    assert whole.multiply("0.0000000015", rounding=ROUND_FLOOR).to_base_units() == -1
+    assert whole.multiply("0.0000000015", rounding=ROUND_CEILING).to_base_units() == 0
+
+    wei = Money.from_base_units(-3, ETH)
+    assert wei.multiply("0.5", rounding=ROUND_FLOOR).to_base_units() == -2
+    assert wei.multiply("0.5", rounding=ROUND_CEILING).to_base_units() == -1
+
+
 def test_large_amounts_keep_every_digit():
     money = Money.from_base_units(10**38, ETH)
     quotient = money.divide(3, rounding=ROUND_DOWN)
