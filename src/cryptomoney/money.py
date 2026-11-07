@@ -264,7 +264,13 @@ class Money:
         return Money(_quantize(converted, to.decimals, rounding), to)
 
     def allocate(self, weights: Sequence[int]) -> list[Money]:
-        """Divide in proportion to integer weights, in base units, losing nothing."""
+        """Divide in proportion to integer weights, in base units, losing nothing.
+
+        Share ``i`` is the share of ``weights[i]``, and the leftover base units go
+        to the earliest shares whose weight is above zero. Permuting the weights
+        therefore does not permute the shares, so undoing an allocation means
+        allocating over the original weight order again.
+        """
         shares = _weights(weights)
         total_weight = sum(shares)
         total = self.to_base_units()

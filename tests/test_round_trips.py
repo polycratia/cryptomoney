@@ -189,6 +189,21 @@ def test_allocate_hands_the_remainder_to_the_earliest_shares():
     ]
 
 
+def test_allocate_shares_follow_the_weight_positions():
+    tenth = Money("0.00000010", BTC)
+    assert [share.to_base_units() for share in tenth.allocate([1, 2, 1])] == [3, 5, 2]
+    assert [share.to_base_units() for share in tenth.allocate([2, 1, 1])] == [6, 2, 2]
+
+    weights = [1, 1, 1]
+    shares = [share.to_base_units() for share in tenth.allocate(weights)]
+    flipped = [
+        share.to_base_units() for share in tenth.allocate(list(reversed(weights)))
+    ]
+    assert shares == [4, 3, 3]
+    assert flipped != list(reversed(shares))
+    assert [share.to_base_units() for share in tenth.allocate(weights)] == shares
+
+
 def test_allocate_refuses_weights_that_cannot_divide():
     money = Money("1", BTC)
     with pytest.raises(ValueError):
