@@ -246,6 +246,13 @@ def test_shortening_and_padding_the_fraction():
         == "0.0000001 BTC"
     )
 
+    # -25 satoshi is the same kind of exact half, but truncating it leaves an
+    # even 2, so ROUND_HALF_EVEN keeps that digit where ROUND_HALF_UP takes the
+    # tie away from zero.
+    twenty_five = Money.from_base_units(-25, BTC)
+    assert twenty_five.format(decimals=7, rounding=ROUND_HALF_EVEN) == "-0.0000002 BTC"
+    assert twenty_five.format(decimals=7, rounding=ROUND_HALF_UP) == "-0.0000003 BTC"
+
 
 def test_shortening_past_the_half_takes_the_half_modes_along():
     # -16 satoshi at 7 places is past the halfway point the -15 case sits on, so
