@@ -78,6 +78,16 @@ def test_parse_refuses_extra_precision_without_a_rounding_mode(asset):
     assert parse_amount(text, asset, rounding=ROUND_DOWN).to_base_units() == 0
     assert parse_amount(text, asset, rounding=ROUND_UP).to_base_units() == 1
 
+    negative = f"-{text}"
+    with pytest.raises(ParseError):
+        parse_amount(negative, asset)
+    # A tenth of a satoshi below zero: ROUND_FLOOR heads towards minus infinity
+    # and takes the whole unit, while ROUND_CEILING truncates to nothing.
+    assert parse_amount(negative, asset, rounding=ROUND_FLOOR).to_base_units() == -1
+    assert parse_amount(negative, asset, rounding=ROUND_CEILING).to_base_units() == 0
+    assert parse_amount(negative, asset, rounding=ROUND_DOWN).to_base_units() == 0
+    assert parse_amount(negative, asset, rounding=ROUND_UP).to_base_units() == -1
+
 
 def test_rounding_modes_at_half_of_the_smallest_unit(asset):
     half = f"5E-{asset.decimals + 1}"
