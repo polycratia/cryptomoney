@@ -154,6 +154,49 @@ out. `split(parts)` is `allocate([1] * parts)`. Weights that cannot describe a
 division are refused rather than guessed: an empty sequence, a negative weight
 and weights that are all zero each raise.
 
+## The rounding contract
+
+Every step that can land below an asset's precision takes `rounding=` and has
+no default: `multiply`, `divide`, `convert`, `parse_amount` on text that is
+finer than the asset, and `format(decimals=...)` when digits have to go. The
+accepted modes are the eight of `decimal`.
+
+Six of them are defined towards or away from zero, so they treat an amount and
+its negation alike, down to the last base unit:
+`(-x).multiply(f, rounding=m) == -x.multiply(f, rounding=m)`. `ROUND_FLOOR` and
+`ROUND_CEILING` are the two that are not, because they lean towards an infinity
+instead. The suite writes this as a subtraction: `SYMMETRIC_MODES` is every
+accepted mode minus the asymmetric pair named in `ASYMMETRIC_MODES`, so a mode
+added to the package joins the symmetry test by default and has to opt out by
+name rather than go untested. See `tests/test_invariants.py`.
+
+Division by `/` is refused because the rounding of the result would be
+implicit, and `divide(divisor, rounding=...)` asks for the mode. When the whole
+amount has to survive instead, `allocate(weights)` and `split(parts)` work in
+base units and hand the leftover units to the earliest shares, so they need no
+mode and lose nothing. See `tests/test_round_trips.py`.
+
+`format(decimals=..., rounding=...)` quantizes with the same mode as the
+arithmetic, so the text agrees with the number it came from. A negative amount
+is where the modes that look alike part ways:
+
+```python
+from decimal import ROUND_CEILING, ROUND_DOWN, ROUND_FLOOR
+
+from cryptomoney import BTC, Money
+
+refund = Money("-0.00012500", BTC)
+
+refund.format(decimals=4, rounding=ROUND_DOWN)     # '-0.0001 BTC', towards zero
+refund.format(decimals=4, rounding=ROUND_FLOOR)    # '-0.0002 BTC', towards minus infinity
+refund.format(decimals=4, rounding=ROUND_CEILING)  # '-0.0001 BTC'
+refund.format(decimals=4)                          # ValueError, no mode given
+```
+
+Above zero the pairs swap: `ROUND_DOWN` and `ROUND_FLOOR` then agree, and it is
+`ROUND_UP` and `ROUND_CEILING` that are indistinguishable. See
+`tests/test_precision_edges.py`.
+
 ## Assets
 
 An `Asset` is a symbol plus the number of decimal places it is divisible into:
