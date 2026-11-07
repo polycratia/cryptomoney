@@ -245,6 +245,23 @@ def test_shortening_and_padding_the_fraction():
     )
 
 
+def test_shortening_past_the_half_takes_the_half_modes_along():
+    # -16 satoshi at 7 places is past the halfway point the -15 case sits on, so
+    # ROUND_HALF_DOWN leaves it and steps away from zero while ROUND_DOWN still
+    # truncates. The fraction is padded to the 7 places either way.
+    sixteen = Money.from_base_units(-16, BTC)
+    assert sixteen.format(decimals=7, rounding=ROUND_DOWN) == "-0.0000001 BTC"
+    assert sixteen.format(decimals=7, rounding=ROUND_HALF_DOWN) == "-0.0000002 BTC"
+    assert (
+        Money.from_base_units(16, BTC).format(decimals=7, rounding=ROUND_DOWN)
+        == "0.0000001 BTC"
+    )
+    assert (
+        Money.from_base_units(16, BTC).format(decimals=7, rounding=ROUND_HALF_DOWN)
+        == "0.0000002 BTC"
+    )
+
+
 def test_split_hands_the_remainder_to_the_first_shares():
     shares = Money("0.00000010", BTC).split(3)
     assert [share.to_base_units() for share in shares] == [4, 3, 3]
