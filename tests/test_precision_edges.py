@@ -219,6 +219,20 @@ def test_shortening_and_padding_the_fraction():
     with pytest.raises(ValueError):
         fee.format(decimals=9)
 
+    # Shortening a negative amount is where the two asymmetric modes part ways:
+    # ROUND_FLOOR heads towards minus infinity and lengthens the refund, while
+    # ROUND_CEILING truncates it towards zero like ROUND_DOWN does.
+    refund = -fee
+    assert refund.format(decimals=4, rounding=ROUND_FLOOR) == "-0.0002 BTC"
+    assert refund.format(decimals=4, rounding=ROUND_CEILING) == "-0.0001 BTC"
+    assert refund.format(decimals=4, rounding=ROUND_DOWN) == "-0.0001 BTC"
+    assert refund.format(decimals=0, rounding=ROUND_FLOOR) == "-1 BTC"
+    assert refund.format(decimals=0, rounding=ROUND_CEILING) == "0 BTC"
+    assert fee.format(decimals=4, rounding=ROUND_FLOOR) == "0.0001 BTC"
+    assert fee.format(decimals=4, rounding=ROUND_CEILING) == "0.0002 BTC"
+    with pytest.raises(ValueError):
+        refund.format(decimals=4)
+
 
 def test_split_hands_the_remainder_to_the_first_shares():
     shares = Money("0.00000010", BTC).split(3)
