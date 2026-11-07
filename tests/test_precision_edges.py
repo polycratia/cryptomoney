@@ -105,6 +105,17 @@ def test_division_rounds_at_the_last_unit():
     assert (
         Money("1", BTC).divide(3, rounding=ROUND_HALF_UP).to_base_units() == 33_333_333
     )
+    # 10 satoshi / 3 is 3.33 satoshi, so truncation ends in a 3 and ROUND_05UP
+    # stays where ROUND_DOWN is, while the away-from-zero modes step up.
+    ten = Money.from_base_units(10, BTC)
+    assert ten.divide(3, rounding=ROUND_FLOOR).to_base_units() == 3
+    assert ten.divide(3, rounding=ROUND_CEILING).to_base_units() == 4
+    assert ten.divide(3, rounding=ROUND_05UP).to_base_units() == 3
+    assert ten.divide(3, rounding=ROUND_UP).to_base_units() == 4
+    assert (-ten).divide(3, rounding=ROUND_FLOOR).to_base_units() == -4
+    assert (-ten).divide(3, rounding=ROUND_CEILING).to_base_units() == -3
+    assert (-ten).divide(3, rounding=ROUND_05UP).to_base_units() == -3
+    assert (-ten).divide(3, rounding=ROUND_UP).to_base_units() == -4
     # 16 satoshi / 3 is 5.33 satoshi, so truncation ends in a 5 and ROUND_05UP
     # is the one mode that then steps away from zero.
     sixteen = Money.from_base_units(16, BTC)
