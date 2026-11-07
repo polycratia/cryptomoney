@@ -106,6 +106,9 @@ def test_rounding_modes_at_half_of_the_smallest_unit(asset):
     negative = f"-5E-{asset.decimals + 1}"
     assert parse_amount(negative, asset, rounding=ROUND_FLOOR).to_base_units() == -1
     assert parse_amount(negative, asset, rounding=ROUND_CEILING).to_base_units() == 0
+    # Below zero ROUND_DOWN still heads towards zero, so it keeps nothing of the
+    # half unit and agrees with ROUND_CEILING rather than with ROUND_FLOOR.
+    assert parse_amount(negative, asset, rounding=ROUND_DOWN).to_base_units() == 0
     assert parse_amount(negative, asset, rounding=ROUND_HALF_UP).to_base_units() == -1
 
 
