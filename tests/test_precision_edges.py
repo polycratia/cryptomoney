@@ -291,6 +291,11 @@ def test_shortening_a_half_that_truncates_onto_a_five():
     assert fifty_five.format(decimals=7, rounding=ROUND_DOWN) == "-0.0000005 BTC"
     assert fifty_five.format(decimals=7, rounding=ROUND_HALF_DOWN) == "-0.0000005 BTC"
     assert fifty_five.format(decimals=7, rounding=ROUND_05UP) == "-0.0000006 BTC"
+    # The step lands on a 6, so trim=False has no trailing zero to keep either.
+    assert (
+        fifty_five.format(decimals=7, rounding=ROUND_05UP, trim=False)
+        == "-0.0000006 BTC"
+    )
     assert (
         Money.from_base_units(55, BTC).format(decimals=7, rounding=ROUND_05UP)
         == "0.0000006 BTC"
