@@ -171,6 +171,18 @@ def test_allocate_conserves_the_total(asset, base_units, weights):
                 assert size == 0
 
 
+@pytest.mark.parametrize("weights", WEIGHTS, ids=WEIGHT_IDS)
+def test_allocate_negates_share_by_share(asset, base_units, weights):
+    for units in base_units[:20]:
+        money = Money.from_base_units(units, asset)
+        shares = money.allocate(weights)
+        negated = (-money).allocate(weights)
+        assert negated == [-share for share in shares]
+        assert [share.to_base_units() for share in negated] == [
+            -share.to_base_units() for share in shares
+        ]
+
+
 def test_allocate_hands_the_remainder_to_the_earliest_shares():
     tenth = Money("0.00000010", BTC)
     assert [share.to_base_units() for share in tenth.allocate([3, 1, 1])] == [6, 2, 2]
