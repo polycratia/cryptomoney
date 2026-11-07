@@ -8,6 +8,9 @@ import pytest
 
 from cryptomoney import (
     ASSETS,
+    ETH,
+    USDT,
+    Asset,
     AssetRegistry,
     Money,
     UnknownAsset,
@@ -25,6 +28,17 @@ SYMMETRIC_IDS = tuple(mode.removeprefix("ROUND_").lower() for mode in SYMMETRIC_
 # Factors whose product lands below the asset's precision for most amounts, so
 # the rounding mode is what decides the last base unit.
 FRACTIONAL_FACTORS = ("0.3", "0.125", "2.5", "-1.0625")
+
+# convert quantizes its product at the target asset's precision, so the same
+# modes decide its last base unit. A rate is always above zero, so the sign of
+# the result comes from the amount alone.
+CONVERSION_TARGETS = (Asset("COARSE", 2), USDT, ETH)
+CONVERSION_TARGET_RATES = ("0.3", "0.125", "2.5")
+
+
+def _half_unit_rate(asset: Asset, target: Asset) -> str:
+    """The rate that turns one base unit of ``asset`` into half a unit of ``target``."""
+    return f"5E{asset.decimals - target.decimals - 1}"
 
 
 def test_registry_resolves_every_symbol(asset):
@@ -81,6 +95,23 @@ def test_rounding_is_symmetric_around_zero(asset, base_units, rounding):
             assert negated == -scaled
             assert negated.to_base_units() == -scaled.to_base_units()
 
+    for target in CONVERSION_TARGETS:
+        one = Money.from_base_units(1, asset)
+        half_rate = _half_unit_rate(asset, target)
+        converted = one.convert(target, half_rate, rounding=rounding)
+        negated = (-one).convert(target, half_rate, rounding=rounding)
+        assert negated == -converted
+        assert negated.to_base_units() == -converted.to_base_units()
+
+        for rate in CONVERSION_TARGET_RATES:
+            for units in base_units[:20]:
+                money = Money.from_base_units(units, asset)
+                converted = money.convert(target, rate, rounding=rounding)
+                negated = (-money).convert(target, rate, rounding=rounding)
+                assert converted.asset == target
+                assert negated == -converted
+                assert negated.to_base_units() == -converted.to_base_units()
+
 
 @pytest.mark.parametrize("rounding", sorted(ASYMMETRIC_MODES))
 def test_floor_and_ceiling_are_the_asymmetric_modes(asset, rounding):
@@ -90,6 +121,20 @@ def test_floor_and_ceiling_are_the_asymmetric_modes(asset, rounding):
     positive = parse_amount(half, asset, rounding=rounding)
     negative = parse_amount(f"-{half}", asset, rounding=rounding)
     assert negative.to_base_units() != -positive.to_base_units()
+
+    for target in CONVERSION_TARGETS:
+        one = Money.from_base_units(1, asset)
+        half_rate = _half_unit_rate(asset, target)
+        converted = one.convert(target, half_rate, rounding=rounding)
+        negated = (-one).convert(target, half_rate, rounding=rounding)
+        assert converted.asset == target
+        assert negated.to_base_units() != -converted.to_base_units()
+        if rounding == ROUND_FLOOR:
+            assert converted.to_base_units() == 0
+            assert negated.to_base_units() == -1
+        else:
+            assert converted.to_base_units() == 1
+            assert negated.to_base_units() == 0
 
 
 def test_ordering_follows_base_units(asset, base_units):
