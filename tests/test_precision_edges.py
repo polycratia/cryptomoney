@@ -27,9 +27,17 @@ from cryptomoney import (
     from_wei,
     parse_amount,
 )
+from cryptomoney.money import _ROUNDING_MODES, _quantize, _significant_decimals
 
 FINEST = Asset("FINE", 36)
 COARSE = Asset("POINTS", 0)
+
+ROUNDING_MODES = tuple(sorted(_ROUNDING_MODES))
+ROUNDING_IDS = tuple(mode.removeprefix("ROUND_").lower() for mode in ROUNDING_MODES)
+
+# Base unit counts whose last digits are what a shortened fraction has to decide
+# on: halves, the digits on either side of a half, and a trailing five.
+SHORTENED_UNITS = (1, -1, 5, -5, 14, -14, 15, -15, 16, -16, 25, -25, 55, -55, 150, -150)
 
 
 def test_asset_precision_has_an_upper_bound():
@@ -303,6 +311,35 @@ def test_shortening_a_half_that_truncates_onto_a_five():
         Money.from_base_units(55, BTC).format(decimals=7, rounding=ROUND_05UP)
         == "0.0000006 BTC"
     )
+
+
+def _fixed_point(amount: Decimal) -> str:
+    # format() reads a negative zero as zero, so the expected text drops the sign
+    # quantizing may have left behind.
+    plain = amount.copy_abs() if amount.is_zero() else amount
+    return f"{plain:f}"
+
+
+@pytest.mark.parametrize("rounding", ROUNDING_MODES, ids=ROUNDING_IDS)
+def test_format_below_the_significant_decimals_follows_its_mode(asset, rounding):
+    candidates = (asset.decimals - 1, asset.decimals - 2, asset.decimals // 2, 0)
+    for units in SHORTENED_UNITS:
+        money = Money.from_base_units(units, asset)
+        significant = _significant_decimals(money.amount)
+        for decimals in dict.fromkeys(
+            place for place in candidates if 0 <= place < significant
+        ):
+            expected = _fixed_point(_quantize(money.amount, decimals, rounding))
+            assert (
+                money.format(symbol=False, decimals=decimals, rounding=rounding)
+                == expected
+            )
+            assert (
+                money.format(decimals=decimals, rounding=rounding)
+                == f"{expected} {asset.symbol}"
+            )
+            with pytest.raises(ValueError, match="does not fit"):
+                money.format(decimals=decimals)
 
 
 def test_split_hands_the_remainder_to_the_first_shares():
